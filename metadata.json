@@ -1,0 +1,6 @@
+{
+  "name": "StudyMate AI — AI Study Assistant",
+  "description": "Your Personal AI-Powered Study Companion. Upload study materials (PDF, DOCX, TXT), generate AI summaries, flashcards, quizzes, notes, personalized study plans, and chat with RAG retrieval.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

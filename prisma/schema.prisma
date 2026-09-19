@@ -1,0 +1,317 @@
+// Prisma schema for StudyMate AI
+// Supports SQLite out of the box in the dev/container environment,
+// and easily configurable to PostgreSQL in production via DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                        String             @id @default(cuid())
+  name                      String
+  email                     String             @unique
+  passwordHash              String
+  avatar                    String?
+  preferredExplanationLevel String             @default("Normal") // Simple, Normal, Detailed
+  theme                     String             @default("system")
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+
+  accounts                  Account[]
+  sessions                  Session[]
+  documents                 Document[]
+  chats                     Chat[]
+  notes                     Note[]
+  flashcards                Flashcard[]
+  flashcardReviews          FlashcardReview[]
+  quizzes                   Quiz[]
+  quizAttempts              QuizAttempt[]
+  studyPlans                StudyPlan[]
+  studySessions             StudySession[]
+  progress                  Progress?
+
+  @@index([email])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Document {
+  id            String          @id @default(cuid())
+  userId        String
+  title         String
+  fileName      String
+  fileType      String          // pdf, docx, txt
+  fileSize      Int             // bytes
+  pageCount     Int             @default(1)
+  status        String          @default("Ready") // Uploading, Processing, Ready, Failed
+  rawText       String          @default("")
+  summary       String?
+  keyConcepts   String?         // Stored as JSON string
+  examTips      String?         // Stored as JSON string
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks        DocumentChunk[]
+  chats         Chat[]
+  notes         Note[]
+  flashcards    Flashcard[]
+  quizzes       Quiz[]
+
+  @@index([userId])
+}
+
+model DocumentChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  pageNumber Int      @default(1)
+  content    String
+  embedding  String?  // Float[] stored as JSON serialized string
+  createdAt  DateTime @default(now())
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([pageNumber])
+}
+
+model Chat {
+  id         String        @id @default(cuid())
+  userId     String
+  title      String
+  documentId String?
+  systemRole String        @default("tutor") // tutor, socratic, exam_coach, simplifier, stem_coder
+  model      String        @default("gemini-3.5-flash")
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document   Document?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  messages   ChatMessage[]
+
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  role      String   // user, assistant, system
+  content   String
+  sources   String?  // JSON string: [{ pageNumber: number, text: string, documentId: string }]
+  model     String?  // gemini-3.5-flash, gemini-3.1-pro-preview, gemini-3.1-flash-lite, etc.
+  createdAt DateTime @default(now())
+
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+}
+
+model Note {
+  id          String    @id @default(cuid())
+  userId      String
+  documentId  String?
+  title       String
+  content     String    // Markdown or rich text
+  overview    String?
+  keyConcepts String?   // JSON string
+  definitions String?   // JSON string
+  examples    String?   // JSON string
+  examTips    String?   // JSON string
+  tags        String?   // comma-separated or JSON
+  isFavorite  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+model Flashcard {
+  id             String            @id @default(cuid())
+  userId         String
+  documentId     String?
+  deckTitle      String            @default("General")
+  front          String
+  back           String
+  difficulty     String            @default("Medium") // Easy, Medium, Hard
+  repetitions    Int               @default(0)
+  interval       Int               @default(1) // days
+  easeFactor     Float             @default(2.5) // SuperMemo SM-2 parameter
+  lastReviewedAt DateTime?
+  nextReviewAt   DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document       Document?         @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  reviews        FlashcardReview[]
+
+  @@index([userId])
+  @@index([deckTitle])
+}
+
+model FlashcardReview {
+  id          String    @id @default(cuid())
+  flashcardId String
+  userId      String
+  rating      String    // Again, Hard, Good, Easy
+  reviewDate  DateTime  @default(now())
+  timeSpentMs Int       @default(0)
+
+  flashcard   Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([flashcardId])
+  @@index([userId])
+}
+
+model Quiz {
+  id            String         @id @default(cuid())
+  userId        String
+  documentId    String?
+  title         String
+  topic         String
+  subject       String         @default("General")
+  difficulty    String         @default("Medium") // Easy, Medium, Hard
+  questionCount Int            @default(5)
+  createdAt     DateTime       @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document      Document?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  questions     QuizQuestion[]
+  attempts      QuizAttempt[]
+
+  @@index([userId])
+}
+
+model QuizQuestion {
+  id            String   @id @default(cuid())
+  quizId        String
+  question      String
+  type          String   @default("mcq") // mcq, true_false, short_answer
+  options       String   // JSON string array of options: ["A", "B", "C", "D"]
+  correctAnswer String
+  explanation   String
+  orderIndex    Int      @default(0)
+
+  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+}
+
+model QuizAttempt {
+  id             String   @id @default(cuid())
+  quizId         String
+  userId         String
+  score          Int
+  totalQuestions Int
+  answers        String   // JSON string of user answers & correctness
+  completedAt    DateTime @default(now())
+
+  quiz           Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([quizId])
+  @@index([userId])
+}
+
+model StudyPlan {
+  id                 String      @id @default(cuid())
+  userId             String
+  title              String
+  examName           String
+  examDate           DateTime?
+  targetHoursPerDay  Float       @default(2.0)
+  currentLevel       String      @default("Intermediate") // Beginner, Intermediate, Advanced
+  subjects           String      // JSON string array
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks              StudyTask[]
+
+  @@index([userId])
+}
+
+model StudyTask {
+  id              String    @id @default(cuid())
+  studyPlanId     String
+  dayNumber       Int       @default(1)
+  dayOfWeek       String    // Monday, Tuesday, etc. or date string
+  subject         String
+  topic           String
+  startTime       String    // "06:00 PM"
+  endTime         String    // "07:00 PM"
+  durationMinutes Int       @default(60)
+  isCompleted     Boolean   @default(false)
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  studyPlan   StudyPlan @relation(fields: [studyPlanId], references: [id], onDelete: Cascade)
+
+  @@index([studyPlanId])
+}
+
+model StudySession {
+  id              String   @id @default(cuid())
+  userId          String
+  durationMinutes Int
+  topic           String
+  sessionType     String   @default("Reading") // Reading, Flashcards, Quiz, Chat
+  date            DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Progress {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  streakDays         Int      @default(0)
+  totalHoursStudied  Float    @default(0.0)
+  topicsCompleted    Int      @default(0)
+  flashcardsReviewed Int      @default(0)
+  quizAverage        Float    @default(0.0)
+  lastActiveDate     DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
